@@ -1,0 +1,295 @@
+---
+title: "COViD project analysis"
+author: 
+- "Szymon M. Kiełbasa (BDS/LUMC)"
+- "Mo Arkani (BDS/LUMC)"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    code_folding: hide
+---
+
+# COViD project analysis
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+source( "covid.R" )
+covData <- CovidData$new( 
+  "Dataset/BREAK COVID overview v3_combined_data__20240310_LUMC.xlsx",
+  vaxValidDaysRange = c( 14, 270 ), reinfDaysRange = c( 14, 270 )
+)
+immData <- ImmunData$new( "Dataset/IMMUN_COVID20240130_V2.xlsx" )
+dm <- DataMerger$new( 
+  immData, covData, transDaysRange = c( 14, 14+9*31 ), preferredDaysDiff = 180,
+  projectSources = c( "CoViCross", "CBT" ) # select one or more sources
+)
+mm <- dm$getMeasures()
+dp <- DataProcessor$new( dm )
+```
+
+## Samples {.tabset .tabset-fade}
+
+### Collection (sample)
+
+```{r fig.width=12, fig.height=5}
+set.seed( 124L )
+selSubjectIds <- dp$getSubjectIds() |> sample( 30L ) |> sort()
+dp$eventsPlot( showTransitions = FALSE, subjects = selSubjectIds )
+```
+
+Each row denotes **one subject** (total: `r length( dp$getSubjectIds() )`).  
+Each letter denotes **one blood sample** and subject state: **control** (B or C), **case** (A - asymptomatic; S - symptomatic), unknown (D - dubious).  
+The blue stars denote **vaxination** moments. Within 9 months break-through-vaccination (blue) and reinfection (red) events are highlighted.  
+Different markers were measured at different timepoints and for different subjects (there is no full symmetry; e.g. squares denote the only samples which were chosen for flow cytometry analysis).
+
+### Pairs (sample)
+
+```{r fig.width=12, fig.height=5}
+dp$eventsPlot( showTransitions = TRUE, subjects = selSubjectIds )
+```
+
+Pairs of measurements at **two timepoints** (transitions from T1  to T2) were created for further analysis.  
+The pairs were selected for each subject, and for each marker, separately.  
+The pairs were classified into two groups: transitions from **control to case** (red), and transitions from **control to control** (green).  
+They were chosen to maximize the number of control-case pairs, and to prefer approx. 6 months between the timepoints.
+
+### Collection (all)
+```{r fig.width=12, fig.height=25}
+dp$eventsPlot( showTransitions = FALSE )
+```
+
+### Transitions (all)
+
+```{r fig.width=12, fig.height=25}
+dp$eventsPlot( showTransitions = TRUE )
+```
+
+## Markers and possible analyses {.tabset .tabset-fade}
+
+### List
+
+Serology dataset:
+
+```{r comment=NA}
+cat( paste0( covData$getMarkers(), collapse = ", " ) )
+```
+
+Cytometry dataset:
+
+```{r comment=NA}
+cat( paste0( immData$getMarkers(), collapse = ", " ) )
+```
+
+### Level and state
+
+```{r fig.width=12, fig.height=5}
+selMarkers <- c( "BA1", "NCP", "T_cells" )
+dp$markersTimePlots( showTransitions = FALSE, showMeasurements = "events", markers = selMarkers )
+```
+
+A sample of measured markers and their levels at each measured timepoint are shown.  
+The point color represents the **current state** of the subject (control - green, asymptomatic case - orange, symptomatic case - red).
+
+### Level change (T1->T2) and state (T2)
+
+```{r fig.width=12, fig.height=5}
+dp$markersTimePlots( showTransitions = TRUE, showMeasurements = NULL, markers = selMarkers )
+```
+
+**Changes** of marker levels between current and later moment are shown.  
+Transitions are split into two groups: **control->case** (red) vs. **control->control** (green).
+
+### Level (T1) to prognose state (T2)
+
+```{r fig.width=12, fig.height=5}
+dp$markersTimePlots( showTransitions = TRUE, transitionAlpha = 0.1, showMeasurements = "T1events", markers = selMarkers )
+```
+
+The central question: is it possible to **predict** whether a subject **will become a case or control** in the future, based on the marker levels at the current timepoint?
+
+## Level and state {.tabset .tabset-fade}
+
+### Serology markers
+
+```{r fig.width=12, fig.height=7}
+d <- dp$calcMeasurementsDataWilcoxTest( formula = Value ~ State, markers = covData$getMarkers() )
+dp$markersTimePlots( showTransitions = FALSE, showMeasurements = "events", markers = d$Marker )
+```
+
+### ←Stats
+
+Wilcoxon test for difference in markers between cases and controls.
+```{r results='asis', warning=FALSE}
+knitr::kable( d )
+```
+
+### ←Boxplot
+```{r fig.width=12, fig.height=7}
+dp$markersBoxPlots( markers = d$Marker )
+```
+
+### Cytometry markers
+
+```{r fig.width=12, fig.height=7}
+d <- dp$calcMeasurementsDataWilcoxTest( formula = Value ~ State, markers = immData$getMarkers() )
+dp$markersTimePlots( showTransitions = FALSE, showMeasurements = "events", markers = d$Marker )
+```
+
+### ←Stats
+
+Wilcoxon test for difference in markers between cases and controls.
+
+```{r results='asis', warning=FALSE}
+knitr::kable( d )
+```
+
+### ←Boxplot
+```{r fig.width=12, fig.height=7}
+dp$markersBoxPlots( markers = d$Marker )
+```
+
+## Level change (T1->T2) and state (T2) {.tabset .tabset-fade}
+
+### Serology markers
+
+```{r fig.width=12, fig.height=7}
+d <- dp$calcTransitionDataWilcoxTest( formula = Value - prevValue ~ TransitionName, markers = covData$getMarkers() )
+dp$markersTimePlots( showTransitions = TRUE, showMeasurements = NULL, markers = d$Marker )
+```
+
+### ←Stats
+
+Wilcoxon test for marker difference (T2-T1) dependence on endpoint case/control (at T2).
+
+```{r results='asis', warning=FALSE}
+knitr::kable( d )
+```
+
+### ←Scatterplot
+
+```{r fig.width=12, fig.height=7}
+dp$markersT1T2ScatterPlots( markers = d$Marker )
+```
+
+### Cytometry markers
+
+```{r fig.width=12, fig.height=7}
+d <- dp$calcTransitionDataWilcoxTest( formula = Value - prevValue ~ TransitionName, markers = immData$getMarkers() )
+dp$markersTimePlots( showTransitions = TRUE, showMeasurements = NULL, markers = d$Marker )
+```
+
+### ←Stats
+
+Wilcoxon test for marker difference (T2-T1) dependence on endpoint case/control (at T2).
+
+```{r results='asis', warning=FALSE}
+knitr::kable( d )
+```
+
+### ←Scatterplot
+
+```{r fig.width=12, fig.height=7}
+dp$markersT1T2ScatterPlots( markers = d$Marker )
+```
+
+## Level (T1) to prognose state (T2) {.tabset .tabset-fade}
+
+### Serology markers
+
+```{r fig.width=12, fig.height=7}
+d <- dp$calcTransitionDataWilcoxTest( formula = prevValue ~ TransitionName, markers = covData$getMarkers() )
+dp$markersTimePlots( showTransitions = TRUE, transitionAlpha = 0.1, showMeasurements = "T1events", markers = d$Marker )
+```
+
+### ←Stats (Wilcoxon)
+
+Wilcoxon test for marker (at T1) which could predict future **case/control** (at T2).
+
+```{r results='asis', warning=FALSE}
+knitr::kable( d )
+```
+
+### ←Stats (Anova/TukeyHSD)
+
+Anova/TukeyHSD test for marker (at T1) which could predict future **symptomatic or asymptomatic** case/control (at T2).
+
+```{r}
+l <- dp$calcTransitionDataKruskalTest( markers = covData$getMarkers() )
+knitr::kable( l$kruskalTestsD )
+```
+
+```{r}
+knitr::kable( l$wilcoxTestsD )
+```
+
+### ←Boxplot
+
+```{r fig.width=12, fig.height=7}
+dp$markersT1forTransitionsBoxPlots( markers = d$Marker )
+```
+
+### Cytometry markers
+
+```{r fig.width=12, fig.height=7}
+d <- dp$calcTransitionDataWilcoxTest( formula = prevValue ~ TransitionName, markers = immData$getMarkers() )
+dp$markersTimePlots( showTransitions = TRUE, transitionAlpha = 0.1, showMeasurements = "T1events", markers = d$Marker )
+```
+
+### ←Stats
+
+Wilcoxon test for marker (at T1) which could predict future case/control (at T2).
+
+```{r results='asis', warning=FALSE}
+knitr::kable( d )
+```
+
+### ←Boxplot
+
+```{r fig.width=12, fig.height=7}
+dp$markersT1forTransitionsBoxPlots( markers = d$Marker )
+```
+
+## Add-ons {.tabset .tabset-fade}
+
+### Age/gender
+
+Only timewise-first measurements of each subject are considered. Red line denotes the average age.
+
+```{r}
+dp$ageT1DistPlot()
+```
+
+### Markers (VBT/reinf)
+
+```{r fig.width=12, fig.height=11}
+dp$markersTimePlots( showTransitions = TRUE, showMeasurements = "vaxReInf" )
+```
+
+### Boxplot (VBT)
+
+Markers at T1 for subjects classifed VBT at T2.
+
+```{r fig.width=12, fig.height=11}
+dp$vaxReinfT1BoxPlots( "vax" )
+```
+
+### Boxplot (reinf)
+
+Markers at T1 for subjects classifed reinf at T2.
+
+```{r fig.width=12, fig.height=11}
+dp$vaxReinfT1BoxPlots( "reinf" )
+```
+
+## Document info
+
+```{r echo=FALSE}
+repo <- git2r::repository( "." )
+l <- list()
+l$sha <- git2r::last_commit(repo)$sha
+l$url <- paste0( "https://", gsub( "[.]git$", "", gsub( ":", "/", gsub( "^[^@]*[@]", "", git2r::remote_url(repo) ) ) ), "/-/tree/", l$sha )
+l$stat <- lapply( git2r::status( repo ), length )
+l$stat <- l$stat[ l$stat > 0 ]
+l$state <- if( do.call( sum, l$stat ) > 0 ) paste0( " [", paste( names( l$stat ), l$stat, sep = ":", collapse = ", " ), "]" ) else ""
+```
+
+Last commit: [`r paste0( l$sha, l$state )`](`r l$url`).

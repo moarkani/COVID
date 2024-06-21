@@ -1,0 +1,24 @@
+name: covid
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - r
+  - radian
+  - r-languageserver 
+  - r-httpgd
+  - r-git2r
+  - r-htmltable
+  - r-kableextra
+  - r-devtools
+  - r-zip
+  - pandoc
+  - r-base
+  - r-tidyverse
+  - r-plotly
+  - r-ggally
+  - r-visnetwork
+  - r-gridextra
+  - r-ggridges
+  #- bioconda::bioconductor-globaltest
+  - zip
