@@ -1,8 +1,8 @@
 ---
 title: "COViD project analysis"
 author: 
-- "Szymon M. Kiełbasa (BDS/LUMC)"
 - "Mo Arkani (BDS/LUMC)"
+- "Szymon M. Kiełbasa (BDS/LUMC)"
 date: "`r format(Sys.time(), '%d %B %Y')`"
 output:
   html_document:
